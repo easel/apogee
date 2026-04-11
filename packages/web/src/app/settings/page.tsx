@@ -27,6 +27,11 @@ const sections = [
 		description: "System-wide audit trail and change history",
 		href: "/settings/audit",
 	},
+	{
+		title: "MFA Enrollment",
+		description: "Set up two-factor authentication with TOTP",
+		href: "/settings/mfa",
+	},
 ];
 
 export default function SettingsPage() {
