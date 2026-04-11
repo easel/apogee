@@ -14,12 +14,16 @@ import {
 	ApprovePurchaseOrderSchema,
 	type CreateJournalEntryInput,
 	CreateJournalEntrySchema,
+	type CreateProductClassificationInput,
+	CreateProductClassificationSchema,
 	type CreateVendorInput,
 	CreateVendorSchema,
 	ResolveComplianceHoldSchema,
 	SendPurchaseOrderSchema,
 	SubmitPurchaseOrderSchema,
 	UpdateMfaEnforcementConfigSchema,
+	type UpdateProductClassificationInput,
+	UpdateProductClassificationSchema,
 } from "@apogee/shared";
 import type { UUID } from "@apogee/shared";
 import SchemaBuilder from "@pothos/core";
@@ -360,6 +364,25 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 		symbol: string | null;
 		decimal_places: string;
 		is_active: boolean;
+	};
+
+	type ProductClassificationRow = {
+		id: string;
+		product_id: string;
+		jurisdiction: string;
+		classification_basis: string | null;
+		usml_category: string | null;
+		eccn: string | null;
+		license_requirement: string | null;
+		notes: string | null;
+		classified_by: string;
+		classified_at: string;
+		reviewed_by: string | null;
+		reviewed_at: string | null;
+		effective_from: string;
+		effective_to: string | null;
+		created_at: string;
+		version: number;
 	};
 
 	// ────────────────────────────────────────────────────────────────────────
@@ -724,6 +747,31 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 		}),
 	});
 
+	// ── Product Classification ─────────────────────────────────────────────
+
+	const ProductClassificationType =
+		builder.objectRef<ProductClassificationRow>("ProductClassification");
+	ProductClassificationType.implement({
+		fields: (t) => ({
+			id: t.exposeString("id"),
+			productId: t.exposeString("product_id"),
+			jurisdiction: t.exposeString("jurisdiction"),
+			classificationBasis: t.exposeString("classification_basis", { nullable: true }),
+			usmlCategory: t.exposeString("usml_category", { nullable: true }),
+			eccn: t.exposeString("eccn", { nullable: true }),
+			licenseRequirement: t.exposeString("license_requirement", { nullable: true }),
+			notes: t.exposeString("notes", { nullable: true }),
+			classifiedBy: t.exposeString("classified_by"),
+			classifiedAt: t.exposeString("classified_at"),
+			reviewedBy: t.exposeString("reviewed_by", { nullable: true }),
+			reviewedAt: t.exposeString("reviewed_at", { nullable: true }),
+			effectiveFrom: t.exposeString("effective_from"),
+			effectiveTo: t.exposeString("effective_to", { nullable: true }),
+			emptyTo: t.exposeString("created_at"),
+			version: t.exposeInt("version"),
+		}),
+	});
+
 	// ── MFA Enforcement Config ─────────────────────────────────────────────
 
 	type MfaEnforcementConfigRow = {
@@ -754,6 +802,38 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 			requiredForRoles: t.stringList({ required: false }),
 		}),
 	});
+
+	const CreateProductClassificationInput_GQL = builder.inputType(
+		"CreateProductClassificationInput",
+		{
+			fields: (t) => ({
+				productId: t.string({ required: true }),
+				jurisdiction: t.string({ required: true }),
+				classificationBasis: t.string({ required: false }),
+				usmlCategory: t.string({ required: false }),
+				eccn: t.string({ required: false }),
+				licenseRequirement: t.string({ required: false }),
+				notes: t.string({ required: false }),
+				effectiveFrom: t.string({ required: true }),
+				effectiveTo: t.string({ required: false }),
+			}),
+		},
+	);
+
+	const UpdateProductClassificationInput_GQL = builder.inputType(
+		"UpdateProductClassificationInput",
+		{
+			fields: (t) => ({
+				id: t.string({ required: true }),
+				classificationBasis: t.string({ required: false }),
+				usmlCategory: t.string({ required: false }),
+				eccn: t.string({ required: false }),
+				licenseRequirement: t.string({ required: false }),
+				notes: t.string({ required: false }),
+				effectiveTo: t.string({ required: false }),
+			}),
+		},
+	);
 
 	// ────────────────────────────────────────────────────────────────────────
 	// Helper: run a query if DB is available, return empty if not
@@ -1348,6 +1428,59 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 					);
 				},
 			}),
+
+			// ── Product Classifications (global) ────────────────────────
+			productClassifications: t.field({
+				type: [ProductClassificationType],
+				args: {
+					productId: t.arg.string({ required: false }),
+					pagination: t.arg({ type: PaginationInput, required: false }),
+				},
+				resolve: async (_root, args) => {
+					const limit = args.pagination?.limit ?? 50;
+					const offset = args.pagination?.offset ?? 0;
+					if (args.productId) {
+						return dbQuery<ProductClassificationRow>(
+							`SELECT id, product_id, jurisdiction, classification_basis,
+							        usml_category, eccn, license_requirement, notes,
+							        classified_by, classified_at::text, reviewed_by,
+							        reviewed_at::text, effective_from::text, effective_to::text,
+							        created_at::text, version
+							 FROM product_classification
+							 WHERE product_id = $1 ORDER BY classified_at DESC LIMIT $2 OFFSET $3`,
+							[args.productId, limit, offset],
+						);
+					}
+					return dbQuery<ProductClassificationRow>(
+						`SELECT id, product_id, jurisdiction, classification_basis,
+						        usml_category, eccn, license_requirement, notes,
+						        classified_by, classified_at::text, reviewed_by,
+						        reviewed_at::text, effective_from::text, effective_to::text,
+						        created_at::text, version
+						 FROM product_classification
+						 ORDER BY classified_at DESC LIMIT $1 OFFSET $2`,
+						[limit, offset],
+					);
+				},
+			}),
+
+			productClassification: t.field({
+				type: ProductClassificationType,
+				nullable: true,
+				args: { id: t.arg.string({ required: true }) },
+				resolve: async (_root, args) => {
+					const rows = await dbQuery<ProductClassificationRow>(
+						`SELECT id, product_id, jurisdiction, classification_basis,
+						        usml_category, eccn, license_requirement, notes,
+						        classified_by, classified_at::text, reviewed_by,
+						        reviewed_at::text, effective_from::text, effective_to::text,
+						        created_at::text, version
+						 FROM product_classification WHERE id = $1`,
+						[args.id],
+					);
+					return rows[0] ?? null;
+				},
+			}),
 		}),
 	});
 
@@ -1669,6 +1802,121 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 			 *
 			 * Ref: SD-004 §9, issue apogee-8339569b
 			 */
+			/**
+			 * createProductClassification — Assigns a USML/ECCN classification to a product.
+			 *
+			 * Layer 1: structural validation via CreateProductClassificationSchema.
+			 *
+			 * Ref: FEAT-006 EXP-001, issue apogee-73764f59
+			 */
+			createProductClassification: t.field({
+				type: ProductClassificationType,
+				args: {
+					input: t.arg({ type: CreateProductClassificationInput_GQL, required: true }),
+				},
+				resolve: async (_root, args) => {
+					if (!db) {
+						throw new Error("Database not configured for createProductClassification mutation");
+					}
+
+					const validated: CreateProductClassificationInput = validateInput(
+						CreateProductClassificationSchema,
+						args.input as CreateProductClassificationInput,
+					);
+
+					const result = await db.query<ProductClassificationRow>(
+						`INSERT INTO product_classification
+							(product_id, jurisdiction, classification_basis,
+							 usml_category, eccn, license_requirement, notes,
+							 classified_by, effective_from, effective_to,
+							 created_by, updated_by)
+						 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+						 RETURNING id, product_id, jurisdiction, classification_basis,
+						   usml_category, eccn, license_requirement, notes,
+						   classified_by, classified_at::text, reviewed_by,
+						   reviewed_at::text, effective_from::text, effective_to::text,
+						   created_at::text, version`,
+						[
+							validated.productId,
+							validated.jurisdiction,
+							validated.classificationBasis ?? null,
+							validated.usmlCategory ?? null,
+							validated.eccn ?? null,
+							validated.licenseRequirement ?? null,
+							validated.notes ?? null,
+							validated.classifiedBy,
+							validated.effectiveFrom,
+							validated.effectiveTo ?? null,
+							validated.classifiedBy,
+						],
+					);
+
+					const row = result.rows[0];
+					if (!row) {
+						throw new Error("Failed to create product classification");
+					}
+					return row;
+				},
+			}),
+
+			/**
+			 * updateProductClassification — Updates an existing product classification.
+			 *
+			 * Layer 1: structural validation via UpdateProductClassificationSchema.
+			 *
+			 * Ref: FEAT-006 EXP-001, issue apogee-73764f59
+			 */
+			updateProductClassification: t.field({
+				type: ProductClassificationType,
+				args: {
+					input: t.arg({ type: UpdateProductClassificationInput_GQL, required: true }),
+				},
+				resolve: async (_root, args) => {
+					if (!db) {
+						throw new Error("Database not configured for updateProductClassification mutation");
+					}
+
+					const validated: UpdateProductClassificationInput = validateInput(
+						UpdateProductClassificationSchema,
+						args.input as UpdateProductClassificationInput,
+					);
+
+					const result = await db.query<ProductClassificationRow>(
+						`UPDATE product_classification
+						 SET classification_basis = COALESCE($1, classification_basis),
+						     usml_category = COALESCE($2, usml_category),
+						     eccn = COALESCE($3, eccn),
+						     license_requirement = COALESCE($4, license_requirement),
+						     notes = COALESCE($5, notes),
+						     effective_to = COALESCE($6, effective_to),
+						     updated_by = $7, updated_at = now(),
+						     version = version + 1
+						 WHERE id = $8
+						 RETURNING id, product_id, jurisdiction, classification_basis,
+						   usml_category, eccn, license_requirement, notes,
+						   classified_by, classified_at::text, reviewed_by,
+						   reviewed_at::text, effective_from::text, effective_to::text,
+						   created_at::text, version`,
+						[
+							validated.classificationBasis ?? null,
+							validated.usmlCategory ?? null,
+							validated.eccn ?? null,
+							validated.licenseRequirement ?? null,
+							validated.notes ?? null,
+							validated.effectiveTo ?? null,
+							validated.reviewedBy ?? null,
+							validated.id,
+						],
+					);
+
+					const row = result.rows[0];
+					if (!row) {
+						throw new Error(`Product classification ${validated.id} not found`);
+					}
+					return row;
+				},
+			}),
+
 			updateMfaEnforcementConfig: t.field({
 				type: MfaEnforcementConfigType,
 				args: {
