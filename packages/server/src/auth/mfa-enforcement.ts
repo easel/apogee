@@ -8,7 +8,7 @@
  * Issue: apogee-246f9f41
  */
 
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import type { AuthDbClient } from "./provider.js";
 
 // Augment FastifyRequest to include mfaEnforcementConfig
@@ -72,10 +72,7 @@ async function loadMfaEnforcementConfig(db: AuthDbClient): Promise<MfaEnforcemen
 }
 
 /** Check if user's roles require MFA based on configuration. */
-export function requiresMfa(
-	config: MfaEnforcementConfig | null,
-	userRoles: string[],
-): boolean {
+export function requiresMfa(config: MfaEnforcementConfig | null, userRoles: string[]): boolean {
 	if (!config) {
 		return false;
 	}
@@ -96,7 +93,10 @@ export function requiresMfa(
  *
  * Must be called after registerSessionAuthHook so that req.user and req.session are available.
  */
-export function registerMfaEnforcementHook(app: FastifyInstance, opts: MfaEnforcementMiddlewareOptions): void {
+export function registerMfaEnforcementHook(
+	app: FastifyInstance,
+	opts: MfaEnforcementMiddlewareOptions,
+): void {
 	const bypass = opts.bypass ?? [/^\/auth\/mfa\//];
 
 	app.decorateRequest("mfaEnforcementConfig", null);

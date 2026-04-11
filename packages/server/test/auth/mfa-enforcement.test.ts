@@ -1,12 +1,12 @@
 /**
  * MFA enforcement middleware tests.
- * 
+ *
  * Ref: SD-004-authn-provider-abstraction.md §7.3
  * Issue: apogee-246f9f41
  */
 
-import { describe, it, expect } from "bun:test";
-import { requiresMfa, type MfaEnforcementConfig } from "../../src/auth/mfa-enforcement.js";
+import { describe, expect, it } from "bun:test";
+import { type MfaEnforcementConfig, requiresMfa } from "../../src/auth/mfa-enforcement.js";
 
 describe("MFA enforcement", () => {
 	describe("requiresMfa", () => {

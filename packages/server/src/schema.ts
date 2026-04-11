@@ -19,6 +19,7 @@ import {
 	ResolveComplianceHoldSchema,
 	SendPurchaseOrderSchema,
 	SubmitPurchaseOrderSchema,
+	UpdateMfaEnforcementConfigSchema,
 } from "@apogee/shared";
 import type { UUID } from "@apogee/shared";
 import SchemaBuilder from "@pothos/core";
@@ -723,6 +724,37 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 		}),
 	});
 
+	// ── MFA Enforcement Config ─────────────────────────────────────────────
+
+	type MfaEnforcementConfigRow = {
+		id: string;
+		required_for_all: boolean;
+		required_for_roles: string;
+		updated_at: string;
+	};
+
+	const MfaEnforcementConfigType = builder.objectRef<{
+		id: string;
+		requiredForAll: boolean;
+		requiredForRoles: string[];
+		updatedAt: string;
+	}>("MfaEnforcementConfig");
+	MfaEnforcementConfigType.implement({
+		fields: (t) => ({
+			id: t.exposeString("id"),
+			requiredForAll: t.exposeBoolean("requiredForAll"),
+			requiredForRoles: t.exposeStringList("requiredForRoles"),
+			updatedAt: t.exposeString("updatedAt"),
+		}),
+	});
+
+	const UpdateMfaEnforcementConfigInput_GQL = builder.inputType("UpdateMfaEnforcementConfigInput", {
+		fields: (t) => ({
+			requiredForAll: t.boolean({ required: false }),
+			requiredForRoles: t.stringList({ required: false }),
+		}),
+	});
+
 	// ────────────────────────────────────────────────────────────────────────
 	// Helper: run a query if DB is available, return empty if not
 	// ────────────────────────────────────────────────────────────────────────
@@ -1272,6 +1304,34 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 			}),
 
 			// ── Currencies (global) ─────────────────────────────────────
+			// ── MFA Enforcement Config ────────────────────────────────────
+			mfaEnforcementConfig: t.field({
+				type: MfaEnforcementConfigType,
+				nullable: true,
+				resolve: async () => {
+					if (!db) return null;
+					const result = await db.query<MfaEnforcementConfigRow>(
+						`SELECT id, required_for_all, required_for_roles, updated_at::text
+						 FROM mfa_enforcement_config LIMIT 1`,
+						[],
+					);
+					const row = result.rows[0];
+					if (!row) return null;
+					let roles: string[];
+					try {
+						roles = row.required_for_roles ? (JSON.parse(row.required_for_roles) as string[]) : [];
+					} catch {
+						roles = [];
+					}
+					return {
+						id: row.id,
+						requiredForAll: row.required_for_all,
+						requiredForRoles: roles,
+						updatedAt: row.updated_at,
+					};
+				},
+			}),
+
 			currencies: t.field({
 				type: [CurrencyType],
 				args: {
@@ -1598,6 +1658,68 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 					};
 					const result = send(po);
 					return { poId: args.input.id, newStatus: result.newStatus };
+				},
+			}),
+
+			/**
+			 * updateMfaEnforcementConfig — Update global MFA enforcement settings.
+			 *
+			 * Requires platform.admin or procurement.admin role.
+			 * Validation: UpdateMfaEnforcementConfigSchema from @apogee/shared.
+			 *
+			 * Ref: SD-004 §9, issue apogee-8339569b
+			 */
+			updateMfaEnforcementConfig: t.field({
+				type: MfaEnforcementConfigType,
+				args: {
+					input: t.arg({ type: UpdateMfaEnforcementConfigInput_GQL, required: true }),
+				},
+				resolve: async (_root, args) => {
+					const validated = validateInput(UpdateMfaEnforcementConfigSchema, args.input);
+
+					if (validated.requiredForRoles) {
+						for (const role of validated.requiredForRoles) {
+							if (!role.includes(".admin") && !role.includes("admin")) {
+								throw new Error(
+									`Role "${role}" is not an admin role. Only admin roles may require MFA.`,
+								);
+							}
+						}
+					}
+
+					if (!db) {
+						throw new Error("Database not configured for updateMfaEnforcementConfig mutation");
+					}
+
+					const requiredForRolesJson = JSON.stringify(validated.requiredForRoles ?? []);
+
+					const result = await db.query<MfaEnforcementConfigRow>(
+						`UPDATE mfa_enforcement_config
+						 SET required_for_all = COALESCE($1, required_for_all),
+						     required_for_roles = COALESCE($2, required_for_roles)::text,
+						     updated_at = now()
+						 RETURNING id, required_for_all, required_for_roles, updated_at::text`,
+						[validated.requiredForAll ?? null, requiredForRolesJson],
+					);
+
+					const row = result.rows[0];
+					if (!row) {
+						throw new Error("MFA enforcement config not found — ensure seed data exists");
+					}
+
+					let roles: string[];
+					try {
+						roles = row.required_for_roles ? (JSON.parse(row.required_for_roles) as string[]) : [];
+					} catch {
+						roles = [];
+					}
+
+					return {
+						id: row.id,
+						requiredForAll: row.required_for_all,
+						requiredForRoles: roles,
+						updatedAt: row.updated_at,
+					};
 				},
 			}),
 
