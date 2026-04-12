@@ -12,12 +12,12 @@
  */
 import {
 	ApprovePurchaseOrderSchema,
-	CreatePurchaseOrderSchema,
-	CreateQuoteSchema,
 	type CreateJournalEntryInput,
 	CreateJournalEntrySchema,
 	type CreateProductClassificationInput,
 	CreateProductClassificationSchema,
+	CreatePurchaseOrderSchema,
+	CreateQuoteSchema,
 	type CreateVendorInput,
 	CreateVendorSchema,
 	ResolveComplianceHoldSchema,
@@ -36,13 +36,13 @@ import {
 	type GLRepository,
 	postJournalEntry,
 } from "./finance/gl-engine.js";
+import { screenVendorForPO } from "./procurement/compliance-screening-service.js";
 import {
 	type POSnapshot,
 	approve,
 	send,
 	submitForApproval,
 } from "./procurement/po-approval-workflow.js";
-import { screenVendorForPO } from "./procurement/compliance-screening-service.js";
 import { validateInput } from "./validation.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -544,7 +544,6 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 		}),
 	});
 
-
 	const QuoteType = builder.objectRef<QuoteRow>("Quote");
 	QuoteType.implement({
 		fields: (t) => ({
@@ -903,7 +902,6 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 			lineItems: t.field({ type: [PurchaseOrderLineInput_GQL], required: true }),
 		}),
 	});
-
 
 	// ── Quote creation input ───────────────────────────────────────────
 
@@ -1753,7 +1751,6 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 				},
 			}),
 
-
 			/**
 			 * createPurchaseOrder — Create a purchase order with line items.
 			 *
@@ -1774,9 +1771,7 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 					);
 
 					if (!db) {
-						throw new Error(
-							"Database not configured for createPurchaseOrder mutation",
-						);
+						throw new Error("Database not configured for createPurchaseOrder mutation");
 					}
 
 					// Layer 2: vendor must exist, be active, and clear screening
@@ -1785,17 +1780,13 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 						legal_name: string;
 						is_active: boolean;
 						entity_id: string;
-					}>(
-						`SELECT id, legal_name, is_active, entity_id FROM vendor WHERE id = $1`,
-						[args.input.vendorId],
-					);
+					}>(`SELECT id, legal_name, is_active, entity_id FROM vendor WHERE id = $1`, [
+						args.input.vendorId,
+					]);
 					const vendor = vendorResult.rows[0];
-					if (!vendor)
-						throw new Error(`Vendor ${args.input.vendorId} not found`);
+					if (!vendor) throw new Error(`Vendor ${args.input.vendorId} not found`);
 					if (!vendor.is_active)
-						throw new Error(
-							`Vendor ${vendor.legal_name} is not active and cannot be used for POs`,
-						);
+						throw new Error(`Vendor ${vendor.legal_name} is not active and cannot be used for POs`);
 
 					// Run denied-party screening on vendor
 					const screening = screenVendorForPO({
@@ -1807,7 +1798,7 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 					if (screening.holdRequired) {
 						throw new Error(
 							`Vendor "${vendor.legal_name}" is blocked by compliance screening ` +
-							`(${screening.outcome}). PO cannot be created.`,
+								`(${screening.outcome}). PO cannot be created.`,
 						);
 					}
 
@@ -1903,9 +1894,7 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 				},
 				resolve: async (_root, args) => {
 					if (!db) {
-						throw new Error(
-							"Database not configured for createQuote mutation",
-						);
+						throw new Error("Database not configured for createQuote mutation");
 					}
 
 					const validated = validateInput(
@@ -1918,17 +1907,12 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 						id: string;
 						legal_name: string;
 						is_active: boolean;
-					}>(
-						`SELECT id, legal_name, is_active FROM customer WHERE id = $1`,
-						[args.input.customerId],
-					);
+					}>(`SELECT id, legal_name, is_active FROM customer WHERE id = $1`, [
+						args.input.customerId,
+					]);
 					const customer = custResult.rows[0];
-					if (!customer)
-						throw new Error(`Customer ${args.input.customerId} not found`);
-					if (!customer.is_active)
-						throw new Error(
-							`Customer ${customer.legal_name} is not active`,
-						);
+					if (!customer) throw new Error(`Customer ${args.input.customerId} not found`);
+					if (!customer.is_active) throw new Error(`Customer ${customer.legal_name} is not active`);
 
 					// Insert quote header
 					const quoteResult = await db.query<{ id: string }>(

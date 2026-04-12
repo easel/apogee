@@ -4,9 +4,9 @@
  * Ref: FEAT-002 SCM-001, issue apogee-e7620b0c
  */
 
-import { describe, it, expect } from "bun:test";
-import { buildSchema } from "../../src/schema.js";
+import { describe, expect, it } from "bun:test";
 import { graphql } from "graphql";
+import { buildSchema } from "../../src/schema.js";
 
 describe("createPurchaseOrder mutation", () => {
 	const schema = buildSchema();
