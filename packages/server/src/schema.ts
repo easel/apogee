@@ -13,6 +13,7 @@
 import {
 	ApprovePurchaseOrderSchema,
 	CreatePurchaseOrderSchema,
+	CreateQuoteSchema,
 	type CreateJournalEntryInput,
 	CreateJournalEntrySchema,
 	type CreateProductClassificationInput,
@@ -206,6 +207,20 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 		compliance_status: string | null;
 		currency_code: string;
 		total_amount: string;
+		created_at: string;
+	};
+	type QuoteRow = {
+		id: string;
+		entity_id: string;
+		customer_id: string;
+		quote_number: string;
+		quote_date: string;
+		valid_until: string | null;
+		status: string;
+		compliance_status: string | null;
+		currency_code: string;
+		total_amount: string;
+		notes: string | null;
 		created_at: string;
 	};
 	type JournalEntryRow = {
@@ -529,6 +544,24 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 		}),
 	});
 
+
+	const QuoteType = builder.objectRef<QuoteRow>("Quote");
+	QuoteType.implement({
+		fields: (t) => ({
+			id: t.exposeString("id"),
+			entityId: t.exposeString("entity_id"),
+			customerId: t.exposeString("customer_id"),
+			quoteNumber: t.exposeString("quote_number"),
+			quoteDate: t.exposeString("quote_date"),
+			validUntil: t.exposeString("valid_until", { nullable: true }),
+			status: t.exposeString("status"),
+			complianceStatus: t.exposeString("compliance_status", { nullable: true }),
+			currencyCode: t.exposeString("currency_code"),
+			totalAmount: t.exposeString("total_amount"),
+			notes: t.exposeString("notes", { nullable: true }),
+			createdAt: t.exposeString("created_at"),
+		}),
+	});
 	const JournalEntryType = builder.objectRef<JournalEntryRow>("JournalEntry");
 	JournalEntryType.implement({
 		fields: (t) => ({
@@ -871,6 +904,31 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 		}),
 	});
 
+
+	// ── Quote creation input ───────────────────────────────────────────
+
+	const QuoteLineItemInput_GQL = builder.inputType("QuoteLineItemInput", {
+		fields: (t) => ({
+			productId: t.string({ required: false }),
+			description: t.string({ required: true }),
+			quantity: t.string({ required: true }),
+			unitPrice: t.string({ required: true }),
+			currencyCode: t.string({ required: true }),
+			type: t.string({ required: true }),
+		}),
+	});
+
+	const CreateQuoteInput_GQL = builder.inputType("CreateQuoteInput", {
+		fields: (t) => ({
+			customerId: t.string({ required: true }),
+			legalEntityId: t.string({ required: true }),
+			currencyCode: t.string({ required: true }),
+			validUntil: t.string({ required: true }),
+			notes: t.string({ required: false }),
+			reference: t.string({ required: false }),
+			lineItems: t.field({ type: [QuoteLineItemInput_GQL], required: true }),
+		}),
+	});
 	// ────────────────────────────────────────────────────────────────────────
 	// Helper: run a query if DB is available, return empty if not
 	// ────────────────────────────────────────────────────────────────────────
@@ -1829,6 +1887,107 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 			 *
 			 * Ref: SD-003-WP2 FIN-002, hx-152c4f71
 			 */
+
+			/**
+			 * createQuote — Create a sales quote with line items.
+			 *
+			 * Layer 1: structural validation via CreateQuoteSchema.
+			 * Layer 2: customer must exist and be active.
+			 *
+			 * Ref: FEAT-003 SLS-001, issue apogee-623cd66b
+			 */
+			createQuote: t.field({
+				type: QuoteType,
+				args: {
+					input: t.arg({ type: CreateQuoteInput_GQL, required: true }),
+				},
+				resolve: async (_root, args) => {
+					if (!db) {
+						throw new Error(
+							"Database not configured for createQuote mutation",
+						);
+					}
+
+					const validated = validateInput(
+						CreateQuoteSchema,
+						args.input as unknown as Record<string, unknown>,
+					);
+
+					// Layer 2: customer must exist and be active
+					const custResult = await db.query<{
+						id: string;
+						legal_name: string;
+						is_active: boolean;
+					}>(
+						`SELECT id, legal_name, is_active FROM customer WHERE id = $1`,
+						[args.input.customerId],
+					);
+					const customer = custResult.rows[0];
+					if (!customer)
+						throw new Error(`Customer ${args.input.customerId} not found`);
+					if (!customer.is_active)
+						throw new Error(
+							`Customer ${customer.legal_name} is not active`,
+						);
+
+					// Insert quote header
+					const quoteResult = await db.query<{ id: string }>(
+						`INSERT INTO quote
+							(entity_id, customer_id, quote_number, quote_date, currency_code,
+							 valid_until, notes,
+							 created_by, updated_by, status, compliance_status)
+						 VALUES ($1, $2, $3, $4, $5, $6, $7,
+							 $8, $8, 'DRAFT', 'pending')
+						 RETURNING id`,
+						[
+							validated.legalEntityId,
+							validated.customerId,
+							`QT-${Date.now()}`,
+							new Date().toISOString().slice(0, 10),
+							validated.currencyCode,
+							validated.validUntil,
+							validated.notes ?? null,
+							validated.legalEntityId,
+						],
+					);
+
+					const quoteId = quoteResult.rows[0]?.id;
+					if (!quoteId) throw new Error("Failed to create quote");
+
+					// Insert line items
+					for (const [i, line] of validated.lineItems.entries()) {
+						await db.query(
+							`INSERT INTO quote_line
+								(quote_id, line_number, product_id, description,
+								 quantity, unit_price, amount, currency_code, type)
+							 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+							[
+								quoteId,
+								i + 1,
+								line.productId ?? null,
+								line.description,
+								line.quantity,
+								line.unitPrice,
+								line.unitPrice, // subtotal = unit_price for now
+								line.currencyCode,
+								line.type,
+							],
+						);
+					}
+
+					// Return the created quote row
+					const finalResult = await dbQuery<QuoteRow>(
+						`SELECT id, entity_id, customer_id, quote_number,
+						        quote_date::text, valid_until::text,
+						        status, compliance_status, currency_code,
+						        total_amount::text, notes, created_at::text
+						 FROM quote WHERE id = $1 AND deleted_at IS NULL`,
+						[quoteId],
+					);
+
+					return finalResult[0];
+				},
+			}),
 			createJournalEntry: t.field({
 				type: JournalEntryResult,
 				args: {
