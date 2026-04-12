@@ -12,6 +12,7 @@
  */
 import {
 	ApprovePurchaseOrderSchema,
+	CreatePurchaseOrderSchema,
 	type CreateJournalEntryInput,
 	CreateJournalEntrySchema,
 	type CreateProductClassificationInput,
@@ -40,6 +41,7 @@ import {
 	send,
 	submitForApproval,
 } from "./procurement/po-approval-workflow.js";
+import { screenVendorForPO } from "./procurement/compliance-screening-service.js";
 import { validateInput } from "./validation.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -834,6 +836,40 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 			}),
 		},
 	);
+
+	// ── Purchase Order creation input ────────────────────────────────────
+
+	const PurchaseOrderLineInput_GQL = builder.inputType("PurchaseOrderLineInput", {
+		fields: (t) => ({
+			lineNumber: t.int({ required: true }),
+			description: t.string({ required: true }),
+			quantityOrdered: t.string({ required: true }),
+			unitOfMeasure: t.string({ required: true }),
+			unitPrice: t.string({ required: true }),
+			currencyCode: t.string({ required: true }),
+			inventoryItemId: t.string({ required: false }),
+			taxCode: t.string({ required: false }),
+			accountId: t.string({ required: false }),
+			requiredDate: t.string({ required: false }),
+		}),
+	});
+
+	const CreatePurchaseOrderInput_GQL = builder.inputType("CreatePurchaseOrderInput", {
+		fields: (t) => ({
+			entityId: t.string({ required: true }),
+			vendorId: t.string({ required: true }),
+			poNumber: t.string({ required: true }),
+			poDate: t.string({ required: true }),
+			currencyCode: t.string({ required: true }),
+			expectedDeliveryDate: t.string({ required: false }),
+			exchangeRate: t.string({ required: false }),
+			paymentTerms: t.string({ required: false }),
+			notes: t.string({ required: false }),
+			shipToAddress: t.string({ required: false }),
+			itarCompartmentId: t.string({ required: false }),
+			lineItems: t.field({ type: [PurchaseOrderLineInput_GQL], required: true }),
+		}),
+	});
 
 	// ────────────────────────────────────────────────────────────────────────
 	// Helper: run a query if DB is available, return empty if not
@@ -1659,6 +1695,128 @@ function _build(glRepo: GLRepository, db: DbClient | null) {
 				},
 			}),
 
+
+			/**
+			 * createPurchaseOrder — Create a purchase order with line items.
+			 *
+			 * Layer 1: structural validation via CreatePurchaseOrderSchema.
+			 * Layer 2: vendor active + cleared (not matching denied-party list).
+			 *
+			 * Ref: FEAT-002 SCM-001, issue apogee-e7620b0c
+			 */
+			createPurchaseOrder: t.field({
+				type: PurchaseOrderType,
+				args: {
+					input: t.arg({ type: CreatePurchaseOrderInput_GQL, required: true }),
+				},
+				resolve: async (_root, args) => {
+					const validated = validateInput(
+						CreatePurchaseOrderSchema,
+						args.input as unknown as Record<string, unknown>,
+					);
+
+					if (!db) {
+						throw new Error(
+							"Database not configured for createPurchaseOrder mutation",
+						);
+					}
+
+					// Layer 2: vendor must exist, be active, and clear screening
+					const vendorResult = await db.query<{
+						id: string;
+						legal_name: string;
+						is_active: boolean;
+						entity_id: string;
+					}>(
+						`SELECT id, legal_name, is_active, entity_id FROM vendor WHERE id = $1`,
+						[args.input.vendorId],
+					);
+					const vendor = vendorResult.rows[0];
+					if (!vendor)
+						throw new Error(`Vendor ${args.input.vendorId} not found`);
+					if (!vendor.is_active)
+						throw new Error(
+							`Vendor ${vendor.legal_name} is not active and cannot be used for POs`,
+						);
+
+					// Run denied-party screening on vendor
+					const screening = screenVendorForPO({
+						vendorId: vendor.id,
+						vendorName: vendor.legal_name,
+						entityId: vendor.entity_id,
+						purchaseOrderId: "temp",
+					});
+					if (screening.holdRequired) {
+						throw new Error(
+							`Vendor "${vendor.legal_name}" is blocked by compliance screening ` +
+							`(${screening.outcome}). PO cannot be created.`,
+						);
+					}
+
+					// Insert PO header
+					const poResult = await db.query<{ id: string }>(
+						`INSERT INTO purchase_order
+							(entity_id, vendor_id, po_number, po_date, currency_code,
+							 expected_delivery_date, exchange_rate, payment_terms, notes, itar_compartment_id,
+							 created_by, updated_by, status, compliance_status)
+						 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+							 $11, $11, 'DRAFT', 'pending')
+						 RETURNING id`,
+						[
+							validated.entityId,
+							validated.vendorId,
+							validated.poNumber,
+							validated.poDate,
+							validated.currencyCode,
+							validated.expectedDeliveryDate ?? null,
+							validated.exchangeRate ?? "1",
+							validated.paymentTerms ?? null,
+							validated.notes ?? null,
+							validated.itarCompartmentId ?? null,
+							validated.entityId,
+						],
+					);
+
+					const poId = poResult.rows[0]?.id;
+					if (!poId) throw new Error("Failed to create purchase order");
+
+					// Insert line items
+					for (const line of validated.lineItems) {
+						await db.query(
+							`INSERT INTO purchase_order_line
+								(purchase_order_id, line_number, description,
+								 quantity_ordered, unit_of_measure, unit_price, currency_code,
+								 inventory_item_id, tax_code, account_id, required_date)
+							 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+							[
+								poId,
+								line.lineNumber,
+								line.description,
+								line.quantityOrdered,
+								line.unitOfMeasure,
+								line.unitPrice,
+								line.currencyCode,
+								line.inventoryItemId ?? null,
+								line.taxCode ?? null,
+								line.accountId ?? null,
+								line.requiredDate ?? null,
+							],
+						);
+					}
+
+					// Return the created PO row
+					const finalResult = await dbQuery<PurchaseOrderRow>(
+						`SELECT id, entity_id, vendor_id, po_number,
+						        po_date::text, expected_delivery_date::text,
+						        status, compliance_status,
+						        currency_code, total_amount::text, created_at::text
+						 FROM purchase_order WHERE id = $1 AND deleted_at IS NULL`,
+						[poId],
+					);
+
+					return finalResult[0];
+				},
+			}),
 			/**
 			 * createJournalEntry — posts a double-entry journal entry to the GL.
 			 *
