@@ -23,10 +23,7 @@ const columns: ColumnDef<Vendor & Record<string, unknown>>[] = [
 		accessorKey: "vendorCode",
 		header: "Vendor Code",
 		cell: ({ row }) => (
-			<Link
-				href={`/procurement/vendors/${row.original.id}`}
-				className="font-mono hover:underline"
-			>
+			<Link href={`/procurement/vendors/${row.original.id}`} className="font-mono hover:underline">
 				{row.original.vendorCode}
 			</Link>
 		),

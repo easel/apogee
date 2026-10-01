@@ -1,7 +1,7 @@
 "use client";
 
 import type { UUID } from "@apogee/shared";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { type ReactNode, createContext, useContext, useEffect, useState } from "react";
 
 const STORAGE_KEY = "apogee:activeEntityId";
 const COOKIE_KEY = "apogee_entityId";
@@ -46,7 +46,9 @@ export function EntityProvider({ children }: { children: ReactNode }) {
 		persistEntity(id);
 	};
 
-	return <EntityContext.Provider value={{ entityId, setEntityId }}>{children}</EntityContext.Provider>;
+	return (
+		<EntityContext.Provider value={{ entityId, setEntityId }}>{children}</EntityContext.Provider>
+	);
 }
 
 export function useEntityId(): EntityContextValue {

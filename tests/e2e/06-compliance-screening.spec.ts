@@ -19,14 +19,7 @@
  * Ref: FEAT-006 EXP-003, issue apogee-cc833b0e
  */
 import { expect, test } from "@playwright/test";
-import {
-	BASE_URL,
-	GRAPHQL_URL,
-	SEED,
-	assertServerHealthy,
-	graphql,
-	screenshotPage,
-} from "./helpers/api.js";
+import { BASE_URL, SEED, assertServerHealthy, graphql, screenshotPage } from "./helpers/api.js";
 
 test.describe("Denied-party screening queue review (FEAT-006 EXP-003)", () => {
 	test("server is healthy", async ({ request }) => {
@@ -46,7 +39,10 @@ test.describe("Denied-party screening queue review (FEAT-006 EXP-003)", () => {
 		);
 
 		expect(result.errors).toBeUndefined();
-		const lists = ((result.data as Record<string, unknown>)?.screeningLists as Array<Record<string, unknown>>) ?? [];
+		const lists =
+			((result.data as Record<string, unknown>)?.screeningLists as Array<
+				Record<string, unknown>
+			>) ?? [];
 		expect(lists.length).toBeGreaterThanOrEqual(3);
 
 		// Standard lists should be present
@@ -69,7 +65,9 @@ test.describe("Denied-party screening queue review (FEAT-006 EXP-003)", () => {
 
 		expect(result.errors).toBeUndefined();
 		const holds =
-			((result.data as Record<string, unknown>)?.complianceHolds as Array<Record<string, unknown>>) ?? [];
+			((result.data as Record<string, unknown>)?.complianceHolds as Array<
+				Record<string, unknown>
+			>) ?? [];
 		// At least the seeded AMBIGUOUS_REGION hold should exist
 		expect(holds.length).toBeGreaterThanOrEqual(1);
 
@@ -94,7 +92,8 @@ test.describe("Denied-party screening queue review (FEAT-006 EXP-003)", () => {
 
 		expect(result.errors).toBeUndefined();
 		const orders =
-			((result.data as Record<string, unknown>)?.salesOrders as Array<Record<string, unknown>>) ?? [];
+			((result.data as Record<string, unknown>)?.salesOrders as Array<Record<string, unknown>>) ??
+			[];
 
 		// SO-003 should be on hold
 		const heldOrder = orders.find((o) => o.orderNumber === "SO-2026-0003");
@@ -118,7 +117,10 @@ test.describe("Denied-party screening queue review (FEAT-006 EXP-003)", () => {
 		);
 
 		expect(result.errors).toBeUndefined();
-		const data = (result.data as Record<string, unknown>)?.complianceHold as Record<string, unknown> | null;
+		const data = (result.data as Record<string, unknown>)?.complianceHold as Record<
+			string,
+			unknown
+		> | null;
 		// If the seed exists, verify structure
 		if (data) {
 			expect(data.id).toBeDefined();
@@ -226,18 +228,24 @@ test.describe("Denied-party screening queue review (FEAT-006 EXP-003)", () => {
 
 		expect(result.errors).toBeUndefined();
 		const restrictions =
-			((result.data as Record<string, unknown>)?.countryRestrictions as Array<Record<string, unknown>>) ??
-			[];
+			((result.data as Record<string, unknown>)?.countryRestrictions as Array<
+				Record<string, unknown>
+			>) ?? [];
 		expect(restrictions.length).toBeGreaterThanOrEqual(0);
 	});
 
 	// ── Scenario 11: GraphQL — restricted regions queryable ──
 	test("restricted regions queryable", async ({ request }) => {
-		const result = await graphql(request, `query { restrictedRegions { id countryCode regionName sanctionsRegime } }`);
+		const result = await graphql(
+			request,
+			`query { restrictedRegions { id countryCode regionName sanctionsRegime } }`,
+		);
 
 		expect(result.errors).toBeUndefined();
 		const regions =
-			((result.data as Record<string, unknown>)?.restrictedRegions as Array<Record<string, unknown>>) ?? [];
+			((result.data as Record<string, unknown>)?.restrictedRegions as Array<
+				Record<string, unknown>
+			>) ?? [];
 		expect(regions.length).toBeGreaterThanOrEqual(0);
 	});
 

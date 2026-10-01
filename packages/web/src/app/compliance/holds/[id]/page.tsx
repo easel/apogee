@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ComplianceStatus } from "@apogee/shared";
 import Link from "next/link";
-import React, { useState } from "react";
+import type React from "react";
+import { useState } from "react";
 
 interface ComplianceHold {
 	id: string;
@@ -63,7 +64,9 @@ export default async function ComplianceHoldDetailPage({ params }: Props) {
 		);
 	}
 
-	const statusValue = (hold.status.toLowerCase() === "resolved" ? "cleared" : "held") as ComplianceStatus;
+	const statusValue = (
+		hold.status.toLowerCase() === "resolved" ? "cleared" : "held"
+	) as ComplianceStatus;
 
 	return (
 		<div className="max-w-3xl">
@@ -207,9 +210,7 @@ function ResolveHoldForm({ holdId }: { holdId: string }) {
 			<CardContent>
 				<form onSubmit={handleSubmit} className="space-y-4">
 					<div>
-						<label className="block text-sm font-medium mb-2">
-							Resolution Status
-						</label>
+						<label className="block text-sm font-medium mb-2">Resolution Status</label>
 						<div className="flex gap-4">
 							<label className="flex items-center gap-2">
 								<input
@@ -251,9 +252,7 @@ function ResolveHoldForm({ holdId }: { holdId: string }) {
 					</div>
 
 					{error && (
-						<div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-							{error}
-						</div>
+						<div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
 					)}
 
 					<Button type="submit" disabled={isSubmitting}>

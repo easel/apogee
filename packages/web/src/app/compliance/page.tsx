@@ -22,10 +22,7 @@ const columns: ColumnDef<ComplianceHold & Record<string, unknown>>[] = [
 		accessorKey: "heldTable",
 		header: "Held Table",
 		cell: ({ row }) => (
-			<Link
-				href={`/compliance/holds/${row.original.id}`}
-				className="font-mono hover:underline"
-			>
+			<Link href={`/compliance/holds/${row.original.id}`} className="font-mono hover:underline">
 				{row.original.heldTable}
 			</Link>
 		),

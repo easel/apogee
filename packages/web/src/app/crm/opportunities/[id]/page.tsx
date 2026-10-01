@@ -105,9 +105,7 @@ export default async function OpportunityDetailPage({ params }: Props) {
 						</div>
 						<div>
 							<dt className="text-muted-foreground">Probability</dt>
-							<dd className="font-medium mt-0.5">
-								{Math.round(opportunity.probability * 100)}%
-							</dd>
+							<dd className="font-medium mt-0.5">{Math.round(opportunity.probability * 100)}%</dd>
 						</div>
 						{opportunity.contactId && (
 							<div>

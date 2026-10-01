@@ -4,9 +4,9 @@
  * Ref: FEAT-003 SLS-001, issue apogee-623cd66b
  */
 
-import { describe, it, expect } from "bun:test";
-import { buildSchema } from "../../src/schema.js";
+import { describe, expect, it } from "bun:test";
 import { graphql } from "graphql";
+import { buildSchema } from "../../src/schema.js";
 
 describe("createQuote mutation", () => {
 	const schema = buildSchema();

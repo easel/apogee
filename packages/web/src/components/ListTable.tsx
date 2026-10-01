@@ -1,12 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import {
-	DataTable,
-	type ColumnDef,
-	type PaginationState,
-	type SortingState,
-} from "./DataTable.js";
+import { type ColumnDef, DataTable, type PaginationState, type SortingState } from "./DataTable.js";
 
 interface ListTableProps<TData extends Record<string, unknown>> {
 	columns: ColumnDef<TData>[];

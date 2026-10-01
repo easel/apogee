@@ -23,10 +23,7 @@ const columns: ColumnDef<Opportunity & Record<string, unknown>>[] = [
 		accessorKey: "name",
 		header: "Name",
 		cell: ({ row }) => (
-			<Link
-				href={`/crm/opportunities/${row.original.id}`}
-				className="font-medium hover:underline"
-			>
+			<Link href={`/crm/opportunities/${row.original.id}`} className="font-medium hover:underline">
 				{row.original.name}
 			</Link>
 		),
